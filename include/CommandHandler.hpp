@@ -13,6 +13,9 @@ private:
     void handleTextMessage(const nlohmann::json &message);
     void handleVoiceMessage(const nlohmann::json &message);
     void handleCallbackQuery(const nlohmann::json &callback_query);
+    void handleVideoMessage(const nlohmann::json & message);
+    void handleAudioMessage(const nlohmann::json & message);
+    nlohmann::json getMediaKeyboard();
     struct VoiceCache
     {
         std::string file_id;

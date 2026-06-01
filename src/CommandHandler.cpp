@@ -20,6 +20,14 @@ void CommandHandler::handleUpdate(const nlohmann::json &update)
         {
             handleTextMessage(message);
         }
+        else if (message.contains("audio"))
+        {
+            handleAudioMessage(message);
+        }
+        else if (message.contains("video_note"))
+        {
+            handleVideoMessage(message);
+        }
     }
     else if (update.contains("callback_query"))
     {
@@ -47,6 +55,16 @@ void CommandHandler::handleTextMessage(const nlohmann::json &message)
     }
 }
 
+nlohmann::json CommandHandler::getMediaKeyboard()
+{
+    return {
+        {"inline_keyboard", {
+            { {{"text", "📝 Аудіо в текст"}, {"callback_data", "txt"}}, {{"text", "📋 Короткий опис"}, {"callback_data", "sum"}} }, 
+            { {{"text", "🏷️ Хештеги"}, {"callback_data", "tag"}}, {{"text", "🌐 Перекласти текст"}, {"callback_data", "transl"}} }
+        }}
+    };
+}
+
 void CommandHandler::handleVoiceMessage(const nlohmann::json &message)
 {
     int64_t chat_id = message["chat"]["id"].get<int64_t>();
@@ -54,10 +72,30 @@ void CommandHandler::handleVoiceMessage(const nlohmann::json &message)
 
     user_last_voice[chat_id] = {file_id, ""};
 
-    nlohmann::json inline_keyboard = {
-        {"inline_keyboard", {{{{"text", "📝 Аудіо в текст"}, {"callback_data", "txt"}}, {{"text", "📋 Короткий опис"}, {"callback_data", "sum"}}}, {{{"text", "🏷️ Хештеги"}, {"callback_data", "tag"}}, {{"text", "🌐 Перекласти текст"}, {"callback_data", "transl"}}}}}};
-
+    nlohmann::json inline_keyboard = getMediaKeyboard();
     client.sendMessage(chat_id, "📥 Отримав голосове повідомлення! Що ти хочеш, щоб я з ним зробив? 👇", inline_keyboard);
+}
+
+void CommandHandler::handleVideoMessage(const nlohmann::json &message)
+{
+    int64_t chat_id = message["chat"]["id"].get<int64_t>();
+    std::string file_id = message["video_note"]["file_id"].get<std::string>();
+    user_last_voice[chat_id] = {file_id, ""};
+
+    nlohmann::json inline_keyboard = getMediaKeyboard();
+
+    client.sendMessage(chat_id, "🎬 Отримав відео-кружок! Що ти хочеш, щоб я з ним зробив? 👇", inline_keyboard);
+}
+
+void CommandHandler::handleAudioMessage(const nlohmann::json &message)
+{
+    int64_t chat_id = message["chat"]["id"].get<int64_t>();
+    std::string file_id = message["audio"]["file_id"].get<std::string>();
+    user_last_voice[chat_id] = {file_id, ""};
+
+    nlohmann::json inline_keyboard =getMediaKeyboard();
+
+    client.sendMessage(chat_id, "🎵 Аудіофайл прийнято! Що ти хочеш, щоб я з ним зробив? 👇", inline_keyboard);
 }
 
 void CommandHandler::handleCallbackQuery(const nlohmann::json &callback_query)
@@ -74,11 +112,12 @@ void CommandHandler::handleCallbackQuery(const nlohmann::json &callback_query)
         return;
     }
 
+    client.sendRequest("answerCallbackQuery", {{"callback_query_id", callback_id}});
+
     auto &voice_cache = user_last_voice[chat_id];
 
     if (action == "transl")
     {
-        client.sendRequest("answerCallbackQuery", {{"callback_query_id", callback_id}});
 
         nlohmann::json inline_keyboard = {
             {"inline_keyboard", {{{{"text", "🇺🇸 Англійська"}, {"callback_data", "Eng"}}, {{"text", "🇵🇱 Польська"}, {"callback_data", "Pol"}}}, {{{"text", "🇩🇪 Німецька"}, {"callback_data", "Nim"}}, {{"text", "🇫🇷 Французька"}, {"callback_data", "Fran"}}}}}};
@@ -101,8 +140,14 @@ void CommandHandler::handleCallbackQuery(const nlohmann::json &callback_query)
             client.sendMessage(chat_id, "⚠️ Не вдалося отримати файл від Telegram.");
             return;
         }
+        std::string ext = ".ogg";
+        size_t dot_pos = path.find_last_of(".");
+        if(dot_pos != std::string::npos)
+        {
+            ext = path.substr(dot_pos);
+        }
 
-        std::string filename = "voice_" + std::to_string(chat_id) + ".ogg";
+        std::string filename = "media_" + std::to_string(chat_id) + ext;
         if (!client.downloadFile(path, filename))
         {
             client.deleteMessage(chat_id, status_msg_id);
@@ -110,7 +155,7 @@ void CommandHandler::handleCallbackQuery(const nlohmann::json &callback_query)
             return;
         }
 
-        recognized_text = openAI.transcribeAudio(filename); 
+        recognized_text = openAI.transcribeAudio(filename);
         std::remove(filename.c_str());
 
         if (recognized_text.empty())
@@ -120,16 +165,16 @@ void CommandHandler::handleCallbackQuery(const nlohmann::json &callback_query)
             return;
         }
 
-        voice_cache.recognized_text = recognized_text; 
+        voice_cache.recognized_text = recognized_text;
     }
 
     TextAnalyzer analyzer;
 
     if (action == "txt")
     {
-        client.sendRequest("answerCallbackQuery", {{"callback_query_id", callback_id}});
 
-        if (status_msg_id != 0) {
+        if (status_msg_id != 0)
+        {
             client.deleteMessage(chat_id, status_msg_id);
         }
 
@@ -137,12 +182,12 @@ void CommandHandler::handleCallbackQuery(const nlohmann::json &callback_query)
     }
     else if (action == "sum")
     {
-        client.sendRequest("answerCallbackQuery", {{"callback_query_id", callback_id}});
 
-        if (status_msg_id != 0) {
+        if (status_msg_id != 0)
+        {
             client.deleteMessage(chat_id, status_msg_id);
         }
-        
+
         int32_t msg_id = client.sendMessage(chat_id, "⏳ Складаю короткий зміст...");
 
         std::string prompt = "Ти — крутий редактор, який вміє вичіпляти найголовніше. Зроби стислий, живий та місткий підсумок цього тексту українською мовою."
@@ -158,12 +203,12 @@ void CommandHandler::handleCallbackQuery(const nlohmann::json &callback_query)
     }
     else if (action == "tag")
     {
-        client.sendRequest("answerCallbackQuery", {{"callback_query_id", callback_id}});
 
-        if (status_msg_id != 0) {
+        if (status_msg_id != 0)
+        {
             client.deleteMessage(chat_id, status_msg_id);
         }
-        
+
         int32_t msg_id = client.sendMessage(chat_id, "⏳ Генерую хештеги...");
 
         std::string prompt = "Прочитай текст і згенеруй список релевантних хештегів українською мовою через пробіл:\n" + recognized_text;
@@ -176,20 +221,36 @@ void CommandHandler::handleCallbackQuery(const nlohmann::json &callback_query)
     }
     else if (action == "Eng" || action == "Pol" || action == "Nim" || action == "Fran")
     {
-        client.sendRequest("answerCallbackQuery", {{"callback_query_id", callback_id}});
 
         client.deleteMessage(chat_id, message_id);
 
-        if (status_msg_id != 0) {
+        if (status_msg_id != 0)
+        {
             client.deleteMessage(chat_id, status_msg_id);
         }
 
         std::string target_language = "";
         std::string flag = "";
-        if (action == "Eng")       { target_language = "англійську"; flag = "🇺🇸"; }
-        else if (action == "Pol")  { target_language = "польську";   flag = "🇵🇱"; }
-        else if (action == "Nim")  { target_language = "німецьку";   flag = "🇩🇪"; }
-        else if (action == "Fran") { target_language = "французьку"; flag = "🇫🇷"; }
+        if (action == "Eng")
+        {
+            target_language = "англійську";
+            flag = "🇺🇸";
+        }
+        else if (action == "Pol")
+        {
+            target_language = "польську";
+            flag = "🇵🇱";
+        }
+        else if (action == "Nim")
+        {
+            target_language = "німецьку";
+            flag = "🇩🇪";
+        }
+        else if (action == "Fran")
+        {
+            target_language = "французьку";
+            flag = "🇫🇷";
+        }
 
         int32_t msg_id = client.sendMessage(chat_id, "🔄 Перекладаю на " + target_language + "...");
 
