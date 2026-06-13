@@ -27,4 +27,5 @@ private:
 public:
     CommandHandler(BotClient &bot_client, WhisperAPI &openai_client);
     void handleUpdate(const nlohmann::json &update);
+    //ххуййй
 };
